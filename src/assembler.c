@@ -1,10 +1,12 @@
 /*
  * assembler.c -- two-pass assembler for SIMPLE-16.
- * Pass 1: addresses and labels.
+ * Pass 1: addresses and labels.  Pass 2: encode each statement.
  */
 #include <ctype.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "assembler.h"
@@ -62,6 +64,84 @@ static int find_label(const Label *labels, int n, const char *name)
     return -1;
 }
 
+/* "R0".."R3" -> 0..3, otherwise -1. */
+static int parse_reg(const char *raw)
+{
+    char tok[MAX_LINE];
+    copy(tok, sizeof tok, raw);
+    char *t = trim(tok);
+    if ((t[0] == 'R' || t[0] == 'r') && t[1] >= '0' && t[1] < '0' + NUM_REGS && t[2] == '\0')
+        return t[1] - '0';
+    return -1;
+}
+
+/* Number (12, -1, 0x1F) or label -> value. */
+static int parse_value(const char *raw, const Label *labels, int nlabels, long *out)
+{
+    char tok[MAX_LINE];
+    copy(tok, sizeof tok, raw);
+    char *t = trim(tok);
+    if (*t == '\0')
+        return -1;
+    int addr = find_label(labels, nlabels, t);
+    if (addr >= 0) {
+        *out = addr;
+        return 0;
+    }
+    char *end;
+    errno = 0;
+    long v = strtol(t, &end, 0);                     /* decimal or 0x hex */
+    if (errno != 0 || *trim(end) != '\0')
+        return -1;
+    *out = v;
+    return 0;
+}
+
+/* [addr] -> M = 0 (direct),  [Rs] / [Rs+n] -> M = 1 (register + offset). */
+static int parse_mem(const char *raw, const Label *labels, int nlabels,
+                     int *mode, int *rs, int *imm, int lineno, char *err, size_t errlen)
+{
+    char tok[MAX_LINE];
+    copy(tok, sizeof tok, raw);
+    char *t = trim(tok);
+    if (*t == '[') {                                 /* strip the brackets */
+        char *close = strrchr(t, ']');
+        if (close == NULL || *trim(close + 1) != '\0')
+            return fail(err, errlen, "line %d: missing ']' in '%s'", lineno, raw);
+        *close = '\0';
+        t = trim(t + 1);
+    }
+
+    /* register + optional offset */
+    if ((t[0] == 'R' || t[0] == 'r') && t[1] >= '0' && t[1] < '0' + NUM_REGS &&
+        (t[2] == '\0' || t[2] == '+' || isspace((unsigned char)t[2]))) {
+        *rs = t[1] - '0';
+        *mode = 1;
+        char *rest = trim(t + 2);
+        long off = 0;
+        if (*rest != '\0') {
+            if (*rest != '+' || parse_value(rest + 1, labels, nlabels, &off) != 0)
+                return fail(err, errlen, "line %d: bad offset in '%s' (use [Rs+n])", lineno, raw);
+            if (off < 0 || off > 0x7F)
+                return fail(err, errlen, "line %d: offset %ld must be 0..127", lineno, off);
+        }
+        *imm = (int)off;
+        return 0;
+    }
+
+    /* direct address (must fit in 7 bits) */
+    long addr;
+    if (parse_value(t, labels, nlabels, &addr) != 0)
+        return fail(err, errlen, "line %d: unknown label or bad address '%s'", lineno, raw);
+    if (addr < 0 || addr > DIRECT_MAX)
+        return fail(err, errlen, "line %d: direct address 0x%lX is above 0x%02X; use [Rs+offset]",
+                    lineno, addr, DIRECT_MAX);
+    *mode = 0;
+    *rs = 0;
+    *imm = (int)addr;
+    return 0;
+}
+
 /* Assemble a source file into a memory image and listing. */
 int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
 {
@@ -79,7 +159,7 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
     int    lineno = 0;
     char   line[MAX_LINE];
 
-    /*  pass 1: addresses and labels */
+    /*pass 1: addresses and labels*/
     while (fgets(line, sizeof line, f) != NULL) {
         lineno++;
         line[strcspn(line, "\r\n")] = '\0';
@@ -125,6 +205,7 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
             if (*text == '\0')
                 continue;                           /* label on its own line */
         }
+
         /* next address in the current segment */
         int addr = next[in_data];
         if (addr > limit[in_data]) {
@@ -133,6 +214,7 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
                         in_data ? "data" : "text", in_data ? DATA_START : TEXT_START, limit[in_data]);
         }
         next[in_data]++;
+
         /* save the statement for the listing and pass 2 */
         ListingEntry *e  = &prog->listing[prog->count];
         Statement    *st = &stmts[prog->count];
@@ -143,6 +225,7 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
         copy(e->label, sizeof e->label, label);
         copy(e->comment, sizeof e->comment, comment);
         st->lineno = lineno;
+
         /* mnemonic (upper-case) and comma-separated operands */
         size_t mlen = strcspn(text, " \t");
         if (mlen >= sizeof st->mnemonic) {
@@ -163,5 +246,77 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
         }
     }
     fclose(f);
+
+    /*  pass 2: encode each statement  */
+    for (int i = 0; i < prog->count; i++) {
+        Statement    *st = &stmts[i];
+        ListingEntry *e  = &prog->listing[i];
+        long value;
+
+        /* .word: a data value */
+        if (strcmp(st->mnemonic, ".WORD") == 0) {
+            if (st->num_operands != 1)
+                return fail(err, errlen, "line %d: .word takes one value", st->lineno);
+            if (parse_value(st->operands[0], labels, nlabels, &value) != 0)
+                return fail(err, errlen, "line %d: bad value '%s'", st->lineno, st->operands[0]);
+            e->word = (uint16_t)(value & 0xFFFF);
+            e->is_data = 1;
+            prog->mem[e->addr] = e->word;
+            continue;
+        }
+
+        /* look up the instruction, check the operand count */
+        const OpInfo *op = op_by_name(st->mnemonic);
+        if (op == NULL)
+            return fail(err, errlen, "line %d: unknown instruction '%s'", st->lineno, st->mnemonic);
+        if (st->num_operands != op->nops)
+            return fail(err, errlen, "line %d: %s needs %d operand(s)", st->lineno, op->name, op->nops);
+
+        /* first operand is Rd (except jumps) */
+        int rd = 0, rs = 0, mode = 0, imm = 0;
+        if (op->nops >= 1 && op->fmt != FMT_J) {
+            rd = parse_reg(st->operands[0]);
+            if (rd < 0)
+                return fail(err, errlen, "line %d: expected register R0..R3, got '%s'",
+                            st->lineno, st->operands[0]);
+        }
+
+        /* the rest depends on the format */
+        switch (op->fmt) {
+        case FMT_R:                                  /* second register */
+            rs = parse_reg(st->operands[1]);
+            if (rs < 0)
+                return fail(err, errlen, "line %d: expected register R0..R3, got '%s'",
+                            st->lineno, st->operands[1]);
+            break;
+        case FMT_I:                                  /* 8-bit constant */
+            if (parse_value(st->operands[1], labels, nlabels, &value) != 0)
+                return fail(err, errlen, "line %d: bad number '%s'", st->lineno, st->operands[1]);
+            if (op->opcode == OP_ADDI ? (value < -128 || value > 127) : (value < 0 || value > 255))
+                return fail(err, errlen, "line %d: value %ld out of range for %s (%s)", st->lineno,
+                            value, op->name, op->opcode == OP_ADDI ? "-128..127" : "0..255");
+            imm = (int)value;
+            break;
+        case FMT_M:                                  /* memory operand */
+            if (parse_mem(st->operands[1], labels, nlabels, &mode, &rs, &imm,
+                          st->lineno, err, errlen) != 0)
+                return -1;
+            break;
+        case FMT_J:                                  /* jump target */
+            if (parse_value(st->operands[0], labels, nlabels, &value) != 0)
+                return fail(err, errlen, "line %d: unknown label or bad address '%s'",
+                            st->lineno, st->operands[0]);
+            if (value < 0 || value > 0xFF)
+                return fail(err, errlen, "line %d: jump target %ld outside 0..255", st->lineno, value);
+            imm = (int)value;
+            break;
+        default:                                     /* N, S: no more operands */
+            break;
+        }
+
+        /* build the 16-bit word and place it in memory */
+        e->word = encode(op, rd, rs, mode, imm);
+        prog->mem[e->addr] = e->word;
+    }
     return 0;
 }
