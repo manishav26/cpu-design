@@ -259,6 +259,8 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
                 return fail(err, errlen, "line %d: .word takes one value", st->lineno);
             if (parse_value(st->operands[0], labels, nlabels, &value) != 0)
                 return fail(err, errlen, "line %d: bad value '%s'", st->lineno, st->operands[0]);
+            if (value < -32768 || value > 65535)
+                return fail(err, errlen, "line %d: .word value %ld does not fit in 16 bits", st->lineno, value);               
             e->word = (uint16_t)(value & 0xFFFF);
             e->is_data = 1;
             prog->mem[e->addr] = e->word;
@@ -306,8 +308,9 @@ int assemble_file(const char *path, Program *prog, char *err, size_t errlen)
             if (parse_value(st->operands[0], labels, nlabels, &value) != 0)
                 return fail(err, errlen, "line %d: unknown label or bad address '%s'",
                             st->lineno, st->operands[0]);
-            if (value < 0 || value > 0xFF)
-                return fail(err, errlen, "line %d: jump target %ld outside 0..255", st->lineno, value);
+            if (value < TEXT_START || value > TEXT_END)
+                return fail(err, errlen, "line %d: jump target 0x%lX outside the text segment (0x00-0x3F)",
+                            st->lineno, value);
             imm = (int)value;
             break;
         default:                                     /* N, S: no more operands */
