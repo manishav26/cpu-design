@@ -72,7 +72,7 @@ int cpu_step(CPU *cpu)
         return cpu_error(cpu, "Illegal opcode");
 
     uint16_t result;
-    uint16_t address;
+    uint32_t address;
 
     /* EXECUTE */
     switch (f.op) {
@@ -87,25 +87,25 @@ int cpu_step(CPU *cpu)
 
     case OP_LOAD:
         address = (f.mode == 0)
-                ? (uint16_t)f.addr7
-                : (uint16_t)(cpu->regs[f.rs] + f.addr7);
+                ? (uint32_t)f.addr7
+                : (uint32_t)cpu->regs[f.rs] + (uint32_t)f.addr7;
 
         if (address >= MEM_SIZE)
             return cpu_error(cpu, "LOAD address out of range");
 
-        cpu->regs[f.rd] = read_memory(cpu, address);
+        cpu->regs[f.rd] = read_memory(cpu, (uint16_t)address);
         break;
 
     case OP_STORE:
         address = (f.mode == 0)
-                ? (uint16_t)f.addr7
-                : (uint16_t)(cpu->regs[f.rs] + f.addr7);
+                ? (uint32_t)f.addr7
+                : (uint32_t)cpu->regs[f.rs] + (uint32_t)f.addr7;
 
         if (address >= MEM_SIZE)
             return cpu_error(cpu, "STORE address out of range");
 
-        write_memory(cpu, address, cpu->regs[f.rd]);
-        break;
+        write_memory(cpu, (uint16_t)address, cpu->regs[f.rd]);
+        break;  
 
     case OP_MOV:
         cpu->regs[f.rd] = cpu->regs[f.rs];
@@ -124,7 +124,8 @@ int cpu_step(CPU *cpu)
         break;
 
     case OP_MUL:
-        result = (uint16_t)(cpu->regs[f.rd] * cpu->regs[f.rs]);
+        result = (uint16_t)((uint32_t)cpu->regs[f.rd] *
+                            (uint32_t)cpu->regs[f.rs]);
         cpu->regs[f.rd] = result;
         update_flags(cpu, result);
         break;
