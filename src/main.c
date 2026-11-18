@@ -1,66 +1,50 @@
-
-/*
- * main.c -- SIMPLE-16 CPU simulator entry point.
- *
- * Usage:
- *   ./simple16 program.asm
- */
-
+/* Execution integration for normal, listing, and trace output. */
 #include <stdio.h>
-#include <stdlib.h>
-
+#include <string.h>
 #include "assembler.h"
-#include "cpu.h"
 #include "loader.h"
+#include "trace.h"
 
-#define MAX_STEPS 10000UL
-
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s program.asm\n", argv[0]);
+    int tracing = argc == 3 && !strcmp(argv[1], "--trace");
+    int listing = argc == 3 && !strcmp(argv[1], "--listing");
+    if (argc != 2 && !tracing && !listing) {
+        fprintf(stderr, "Usage: %s [--trace|--listing] program.asm\n", argv[0]);
         return 1;
     }
-
-    /* Program contains 256 memory words and a listing. */
-    static Program program;
-    static CPU cpu;
-
+    static Program p;
+    CPU cpu;
     char error[256];
-
-    /* Assemble the source file. */
-    if (assemble_file(argv[1], &program,
-                      error, sizeof(error)) != 0) {
+    if (assemble_file(argv[argc-1], &p, error, sizeof error)) {
         fprintf(stderr, "Assembler error: %s\n", error);
         return 1;
     }
-
-    /* Load assembled machine code into CPU RAM. */
-    if (cpu_load_program(&cpu, &program) != 0) {
-        fprintf(stderr, "Failed to load program.\n");
-        return 1;
+    if (listing) {
+        puts("Address Word Fields | Label | Source");
+        for (int i = 0; i < p.count; ++i) {
+            char bits[128];
+            fields_binary(p.listing[i].word, bits, sizeof bits);
+            printf("%04X %04X %s | %s | %s\n", p.listing[i].addr,
+                   (unsigned)p.listing[i].word, bits, p.listing[i].label, p.listing[i].text);
+        }
+        return 0;
     }
-
-    printf("SIMPLE-16 CPU Simulator\n");
-    printf("-----------------------\n");
-
-
-    if (cpu_run(&cpu, MAX_STEPS) != 0) {
+    if (cpu_load_program(&cpu, &p)) return 1;
+    unsigned last = 0;
+    for (int i = 0; i < p.count; ++i)
+        if ((unsigned)p.listing[i].addr > last) last = (unsigned)p.listing[i].addr;
+    TraceRange range = {0, last};
+    if (trace_run(&cpu, 10000, tracing ? stdout : NULL, &range, 1)) {
         fprintf(stderr, "CPU execution failed.\n");
         return 1;
     }
-
-    printf("Execution completed successfully.\n");
-    printf("Instructions executed: %lu\n", cpu.steps);
-
-    printf("\nRegisters:\n");
-    for (int i = 0; i < NUM_REGS; i++)
-        printf("R%d = %u (0x%04X)\n",
-               i, cpu.regs[i], cpu.regs[i]);
-
-    printf("\nRAM[0x40] = %u (0x%04X)\n",
-           cpu.ram[0x40], cpu.ram[0x40]);
-    printf("RAM[0x41] = %u\n", cpu.ram[0x41]);
-
+    printf("HALT steps=%lu R0=%u (0x%04X)\n", cpu.steps,
+           (unsigned)cpu.regs[0], (unsigned)cpu.regs[0]);
+    for (int i = 0; i < p.count; ++i)
+        if (p.listing[i].is_data)
+            printf("%s RAM[0x%04X]=%u (0x%04X)\n", p.listing[i].label,
+                   p.listing[i].addr, (unsigned)cpu.ram[p.listing[i].addr],
+                   (unsigned)cpu.ram[p.listing[i].addr]);
     return 0;
 }
