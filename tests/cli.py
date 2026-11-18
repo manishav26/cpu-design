@@ -31,3 +31,23 @@ for name, steps in [('square', 4), ('factorial', 47)]:
 for args in [[], ['--bogus', 'programs/square.asm'], ['missing.asm']]:
     assert subprocess.run(['./build/simple16', *args], capture_output=True).returncode != 0
 print('PASS native C agreement, complete RAM snapshots, CLI errors')
+
+# Regressions for the teammate fixes now integrated from main.
+with tempfile.TemporaryDirectory() as directory:
+    path = pathlib.Path(directory) / 'probe.asm'
+    path.write_text('.text\nLOAD R0, [large]\nMUL R0, R0\nHALT\n.data\nlarge: .word 65535\n')
+    assert 'R0=1 (0x0001)' in run('./build/simple16', str(path))
+    for operation in ('LOAD', 'STORE'):
+        path.write_text(f'.text\nLOAD R0, [large]\n{operation} R1, [R0+65]\nHALT\n.data\nlarge: .word 65535\n')
+        result = subprocess.run(['./build/simple16', str(path)], capture_output=True, text=True)
+        assert result.returncode != 0 and f'{operation} address out of range' in result.stderr
+    for source, error in [
+        ('.text\nJMP 64\n', 'outside the text segment'),
+        ('.text\nCALL 64\n', 'outside the text segment'),
+        ('.text\nHALT\n.data\nx: .word 65536\n', 'does not fit in 16 bits'),
+        ('.text\nHALT\n.data\nx: .word -32769\n', 'does not fit in 16 bits'),
+    ]:
+        path.write_text(source)
+        result = subprocess.run(['./build/simple16', str(path)], capture_output=True, text=True)
+        assert result.returncode != 0 and error in result.stderr
+print('PASS merged CPU and assembler fix regressions')
