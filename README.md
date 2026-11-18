@@ -5,6 +5,39 @@ CMPE 220 team project: **CPU Design** (Part 1) and **Program Layout & Execution*
 
 ## Part 1: CPU Design
 
+### Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│           SIMPLE-16 CPU  (16-bit words, 4-bit opcode)            │
+│                                                                  │
+│   ┌──────────────┐    ┌──────────────┐    ┌────────────────────┐ │
+│   │ Control Unit │    │     ALU      │    │     Registers      │ │
+│   │              │    │              │    │                    │ │
+│   │    Fetch     │    │   ADD  SUB   │    │   R0  R1  R2  R3   │ │
+│   │    Decode    │    │   MUL  CMP   │    │     PC  IR  SP     │ │
+│   │   Execute    │    │     ADDI     │    │      MAR  MDR      │ │
+│   │              │    │  flags Z, N  │    │       FLAGS        │ │
+│   └──────────────┘    └──────────────┘    └────────────────────┘ │
+│           │                   │                      │           │
+│           └───────────────────┼──────────────────────┘           │
+│                               │  16-bit internal bus             │
+│                               │  MAR = address, MDR = data       │
+│                               ▼                                  │
+│           ┌──────────────────────────────────────┐               │
+│           │ MEMORY  (256 words x 16 bits)        │               │
+│           │                                      │               │
+│           │ 0x00 - 0x3F   Text    code           │               │
+│           │ 0x40 - 0x7F   Data    variables      │               │
+│           │ 0x80 - 0xBF   Heap    dynamic data   │               │
+│           │ 0xC0 - 0xFF   Stack   grows down     │               │
+│           └──────────────────────────────────────┘               │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+![SIMPLE-16 CPU diagram](docs/1_cpu_diagram.png)
+
 ### Architecture
 | Item | Choice |
 |---|---|
@@ -39,6 +72,36 @@ N  [ op 4 | 0000 0000 0000               ]   HALT
   - 0 = direct, address = addr7 (0x00–0x7F)
   - 1 = register + offset, address = Rs + offset (0–127)
 - **sub field (opcode F):** 00 = PUSH, 01 = POP, 10 = RET
+
+### Instruction Encoding
+
+![Instruction encoding table](docs/8_encoding_table.png)
+
+**Hand-encoding example:** `MUL R1, R0`
+
+| opcode | Rd | Rs | unused | → | hex |
+|---|---|---|---|---|---|
+| `0111` (MUL) | `01` (R1) | `00` (R0) | `00000000` | → | `0x7400` |
+
+More examples: [docs/5_hand_encoding_examples.png](docs/5_hand_encoding_examples.png)
+
+### Assembler
+
+Two-pass assembler (`src/assembler.c`):
+- **Pass 1:** reads the file, records labels, gives each line an address (`.text` from 0x00, `.data` from 0x40)
+- **Pass 2:** parses operands and encodes each line into a 16-bit word
+- Reports an error for jump targets outside the text segment and `.word` values that don't fit in 16 bits
+
+```asm
+        .text
+start:  LOAD  R0, [base]     ; direct address
+        LDI   R2, 1
+loop:   MUL   R2, R0
+        JNZ   loop
+        HALT
+        .data
+base:   .word 8
+```
 
 ## Part 2: Program Layout & Execution
 _To be added._
