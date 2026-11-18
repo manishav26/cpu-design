@@ -97,11 +97,11 @@ Member & Contribution allocation (names pending)\\\midrule
 3 & Assembly examples, native factorial reference and manual translation; read-only trace formatting and CLI integration; correctness tests; Makefile; run instructions; generated listings, results, snapshots and report integration.\\\bottomrule
 \end{tabular}\caption{Specific team contribution allocation, pending confirmation of names and final review.}
 \end{table}
-\subsection*{Outstanding integration review}
+\subsection*{Integration status and final review}
 \begin{itemize}
-\item Member 2: widen MUL operands before multiplication; signed integer promotion can overflow for large operands. Widen indirect address sums before checking bounds; current narrowing can wrap an invalid address into RAM.
-\item Member 1: assembler accepts branch targets up to 0xFF, beyond executable text; .word 65536 silently truncates; source files lack final newlines.
-\item UBSan passes the contributed tests. Combined ASan/UBSan stalled on this host and was stopped; no ASan pass is claimed. Example tests cover the submitted arithmetic programs; they do not certify the CPU across all operand values. See report/KNOWN\_ISSUES.md for reproducible issue probes.
+\item Integrated main includes Member 2 fixes: widened MUL operands and effective addresses checked before narrowing. Regression tests verify multiplication wrap and invalid LOAD/STORE rejection.
+\item Member 1 fixes reject JMP/CALL targets outside text and .word literals outside -32768..65535. Missing final source newlines remain a compiler warning.
+\item UBSan passes the contributed tests. Combined ASan/UBSan stalled on this host and was stopped; no ASan pass is claimed. Example tests cover the submitted arithmetic programs; they do not certify the CPU across all operand values. See report/KNOWN\_ISSUES.md for resolved issues and remaining limitations.
 \item Add actual team names and confirm allocations. Team review and integration are still required; this draft is not submission-ready.
 \end{itemize}
 The trace API accepts multiple inclusive memory ranges so later text/data/heap/stack views can reuse the formatter. Recursive execution for the December assignment is outside this contribution.

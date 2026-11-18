@@ -1,45 +1,25 @@
-# Integration review (existing teammate code)
+# Integration review after teammate merges
 
-Verified against local `origin/cpu-simulator` ae9e0a6. No fetch was needed;
-remote GitHub merge status was not queried. ISA/assembler files are identical
-to local `origin/cpudesign/isa-assembler`. No CPU/assembler changes are included.
+Fetched and verified `origin/main` at `20a399e`, containing CPU fixes `ab19dd0`
+and assembler fixes `2c561f2`. Those commits are integrated into the feature
+branch through Git history; Member 3 has not rewritten teammate implementations.
 
-| Owner | Finding | Evidence / impact |
+| Owner | Original finding | Current status |
 |---|---|---|
-| Member 2 | MUL integer promotions | `cpu.c` multiplies two uint16_t values after promotion to signed int. 65535 squared exceeds INT_MAX; widen operands to uint32_t before multiplication. |
-| Member 2 | Indirect address narrowing | LOAD/STORE cast base+offset to uint16_t before checking MEM_SIZE. 65535+65 wraps to 64. Calculate and check in uint32_t first. |
-| Member 1 | Branch target domain | Assembler accepts 0..255; CPU permits execution only at 0..63. A jump to 64 assembles, then faults on the next fetch. |
-| Member 1 | Data literal truncation | `.word 65536` becomes 0 via masking. Reject or document explicitly. |
-| Member 1 | Missing final newlines | isa.h, isa.c, assembler.h, assembler.c produce Clang -Wnewline-eof warnings under -Wpedantic. |
+| Member 2 | MUL signed integer promotion overflow | Fixed: operands widen to uint32_t before multiplying; 65535 squared yields 1 modulo 65536 under UBSan. |
+| Member 2 | Indirect address wrap | Fixed: wide effective address checked before narrowing; LOAD/STORE at 65535+65 fault. |
+| Member 1 | Branch/CALL target domain | Fixed: assembler rejects targets outside text 0x00..0x3F. |
+| Member 1 | Data literal truncation | Fixed: .word accepts -32768..65535 and rejects values outside that range. |
+| Member 1 | Missing final newlines | Still present in isa.h, isa.c, assembler.h, assembler.c; strict Clang builds warn. |
 
-README diagram paths and the misleading “16 instructions” description were
-corrected as documentation integration. There are 16 primary groups and 18 mnemonics.
+The functional fixes above have regression checks in `tests/cli.py`, executed
+by `make test` and `make sanitize`. Member 2's `test_fixes.c` is also retained
+from main; the Member 3 suite uses assertions and nonzero failure statuses.
 
-The contributed examples never use overflowing host-int products or invalid
-indirect addresses. Passing example sanitizers does not resolve these issues.
+README diagram paths and the “16 instructions” wording were corrected as
+Member 3 documentation integration: 16 primary groups contain 18 mnemonics.
 
-Manual probes (keep outside the normal passing test suite):
-
-```asm
-; MUL overflow: UBSan should report signed integer overflow.
-.text
-LOAD R0, [large]
-MUL R0, R0
-HALT
-.data
-large: .word 65535
-```
-
-```asm
-; Address wrap: CPU incorrectly reads data at 0x40 instead of faulting.
-.text
-LOAD R0, [large]
-LOAD R1, [R0+65]
-HALT
-.data
-large: .word 65535
-```
-
-Do not label the combined submission final until names, teammate review and
-integration decisions about these issues are complete. The report contains
-complete traces for the required examples, not the later recursion assignment.
+Combined AddressSanitizer/UBSan stalled on this host in the earlier attempt;
+no ASan pass is claimed. UBSan remains the default sanitizer check.
+Actual team names, contribution confirmation and final review are still needed.
+The December recursive program assignment is outside this contribution.

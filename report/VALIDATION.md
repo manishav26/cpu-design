@@ -1,8 +1,8 @@
 # Member 3 validation record
 
-Local source base: `origin/cpu-simulator` (`ae9e0a6`), feature branch
-`feat/programs-execution-tracing`. Local refs were used without network fetch;
-this does not assert current GitHub PR merge status.
+Original source base: `origin/cpu-simulator` (`ae9e0a6`). Feature branch:
+`feat/programs-execution-tracing`. Now integrated with fetched `origin/main`
+(`20a399e`), which contains both teammate PRs and their functional fixes.
 
 - `make run-example`: square(8) = 64, 4 instructions; factorial(8) = 40320,
   47 instructions. Both halted and stored R0 at labeled result address 0x41.
@@ -17,9 +17,10 @@ this does not assert current GitHub PR merge status.
 - Traced final CPU fields and all RAM words equal the existing `cpu_run` result.
   Formatter is checked for state preservation. Step-limit and out-of-text fault
   tests emit expected stderr diagnostics and pass assertions.
-- Separate pre-existing issue probes reproduced MUL overflow (UBSan abort),
-  indirect address wrap (unexpected success), oversized .word truncation, and
-  out-of-text jump execution fault. These are excluded from passing example tests.
+- Before integration, probes reproduced four functional defects. After teammate
+  fixes, regression tests verify large-operand MUL, invalid indirect LOAD/STORE,
+  invalid JMP/CALL targets and oversized/undersized .word literals. All pass
+  under UBSan; these functional defects are resolved.
 - `make report`: generates a 34-page draft PDF, all listings and snapshots from
   current assembler/simulator output. Tectonic downloaded missing lastpage.sty.
 - Strict build still reports missing final newlines in teammate ISA/assembler
@@ -32,4 +33,9 @@ Rendered PDF review: representative architecture, encoding, listings/results,
 initial/intermediate/final snapshot and contribution pages were visually inspected.
 Trace text was enlarged to improve readability. Extracted word bounds on all
 34 pages stayed within horizontal margins. Numbering runs 01/34 through 34/34.
-`git diff --check` passes; teammate CPU/assembler/ISA sources remain unchanged.
+`git diff --check` passes; teammate CPU/assembler/ISA sources match integrated main.
+
+Post-merge validation: `make sanitize` and `make report` pass against integrated
+main, including CPU/assembler fix regressions. Regenerated 34-page PDF results
+and integration-status pages were visually inspected; extracted text bounds
+on all pages fit horizontal and vertical page margins. No push was performed.

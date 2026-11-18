@@ -46,7 +46,8 @@ for later segment views; recursion/heap visualization is not implemented here.
 Tests execute actual assembled code, compare full final CPU/RAM state against
 `cpu_run`, check read-only formatting, HALT/snapshot counts, full RAM block
 coverage, error propagation and step limits, and compare factorial inputs
-0, 1, 5 and 8 against native C. Existing CPU issues are recorded separately in
+0, 1, 5 and 8 against native C. Merged CPU/assembler fixes have regression checks; resolved issues and remaining
+limitations are recorded in
 [report/KNOWN_ISSUES.md](report/KNOWN_ISSUES.md).
 
 AddressSanitizer can be requested with `make SANITIZERS=address,undefined sanitize`.
