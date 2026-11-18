@@ -157,6 +157,7 @@ More examples: [docs/hand_encoding_examples.png](docs/hand_encoding_examples.png
 Two-pass assembler (`src/assembler.c`):
 - **Pass 1:** reads the file, records labels, gives each line an address (`.text` from 0x00, `.data` from 0x40)
 - **Pass 2:** parses operands and encodes each line into a 16-bit word
+- Reports an error for jump targets outside the text segment and `.word` values that don't fit in 16 bits
 
 ```asm
         .text
