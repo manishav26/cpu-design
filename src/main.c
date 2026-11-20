@@ -9,9 +9,10 @@ int main(int argc, char **argv)
 {
     /* One optional output mode followed by the assembly source path. */
     int tracing = argc == 3 && !strcmp(argv[1], "--trace");
+    int segments = argc == 3 && !strcmp(argv[1], "--trace-segments");
     int listing = argc == 3 && !strcmp(argv[1], "--listing");
-    if (argc != 2 && !tracing && !listing) {
-        fprintf(stderr, "Usage: %s [--trace|--listing] program.asm\n", argv[0]);
+    if (argc != 2 && !tracing && !listing && !segments) {
+        fprintf(stderr, "Usage: %s [--trace|--trace-segments|--listing] program.asm\n", argv[0]);
         return 1;
     }
     /* The assembler supplies both the RAM image and the source listing.
@@ -42,7 +43,14 @@ int main(int argc, char **argv)
         if ((unsigned)p.listing[i].addr > last) last = (unsigned)p.listing[i].addr;
     TraceRange range = {0, last};
     /* Traced and concise runs share cpu_step and the same instruction limit. */
-    if (trace_run(&cpu, 10000, tracing ? stdout : NULL, &range, 1)) {
+    /* Part 2 repeats all 256 words in four named blocks, including unused heap
+     * cells. Keeping every step also captures each CALL, RET, and final HALT. */
+    const TraceRange segment_ranges[] = {
+        {TEXT_START, TEXT_END}, {DATA_START, DATA_END},
+        {HEAP_START, HEAP_END}, {STACK_START, STACK_END}
+    };
+    if (trace_run(&cpu, 10000, (tracing || segments) ? stdout : NULL,
+                  segments ? segment_ranges : &range, segments ? 4 : 1)) {
         fprintf(stderr, "CPU execution failed.\n");
         return 1;
     }

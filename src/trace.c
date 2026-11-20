@@ -29,6 +29,13 @@ int trace_snapshot(FILE *out, const CPU *c, int executed,
     /* Repeat the complete selected blocks, including unchanged and zero words.
      * Eight address:value pairs per line keep word addresses easy to follow. */
     for (size_t i = 0; i < count; ++i) {
+        /* Name complete architectural segments; arbitrary selected blocks retain
+         * the plain RAM heading used by the compact Part 1 trace. */
+        if ((ranges[i].first == TEXT_START && ranges[i].last == TEXT_END) ||
+            (ranges[i].first == DATA_START && ranges[i].last == DATA_END) ||
+            (ranges[i].first == HEAP_START && ranges[i].last == HEAP_END) ||
+            (ranges[i].first == STACK_START && ranges[i].last == STACK_END))
+            fprintf(out, "SEGMENT %s\n", segment_name((int)ranges[i].first));
         fprintf(out, "RAM words 0x%04X..0x%04X (address: value)\n", ranges[i].first, ranges[i].last);
         for (unsigned a = ranges[i].first; a <= ranges[i].last; ++a) {
             fprintf(out, "%04X:%04X%s", a, (unsigned)c->ram[a],

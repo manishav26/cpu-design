@@ -31,13 +31,19 @@ static void example(const char *path, unsigned input, unsigned expected)
     traced=normal; before=normal;
     FILE *out=tmpfile(); assert(out);
     TraceRange range={0,(unsigned)result_addr};
-    assert(trace_snapshot(out,&traced,-1,&range,1)==0);
+    TraceRange segments[] = {{TEXT_START,TEXT_END}, {DATA_START,DATA_END},
+                             {HEAP_START,HEAP_END}, {STACK_START,STACK_END}};
+    int recursive = strstr(path, "recursive") != NULL;
+    const TraceRange *ranges = recursive ? segments : &range;
+    size_t count = recursive ? 4 : 1;
+    assert(trace_snapshot(out,&traced,-1,ranges,count)==0);
     equal(&before,&traced); /* formatter is read-only */
     fclose(out); out=tmpfile(); assert(out);
     assert(cpu_run(&normal,1000)==0);
-    assert(trace_run(&traced,1000,out,&range,1)==0);
+    assert(trace_run(&traced,1000,out,ranges,count)==0);
     equal(&normal,&traced);
     assert(normal.halted && !normal.faulted && normal.steps<1000);
+    assert(normal.sp==SP_START);
     assert(normal.regs[0]==expected && normal.ram[result_addr]==expected);
     rewind(out);
     while(fgets(line,sizeof line,out)) {
@@ -56,6 +62,10 @@ int main(void)
     example("programs/factorial.asm",1,1);
     example("programs/factorial.asm",5,120);
     example("programs/factorial.asm",8,40320);
+    example("programs/factorial_recursive.asm",0,1);
+    example("programs/factorial_recursive.asm",1,1);
+    example("programs/factorial_recursive.asm",4,24);
+    example("programs/factorial_recursive.asm",8,40320);
     CPU cpu; cpu_reset(&cpu); cpu.ram[0]=0xA000; /* JMP 0 */
     assert(trace_run(&cpu,3,NULL,NULL,0)==-1 && cpu.faulted && !cpu.halted && cpu.steps==3);
     cpu_reset(&cpu); cpu.pc=0x40;

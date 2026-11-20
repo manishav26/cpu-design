@@ -141,7 +141,7 @@ also show unsigned decimal. N tests bit 15: 40320 is a valid unsigned result eve
 when N is set. MAR/MDR describe the last memory access, often instruction fetch.
 Both modes share `trace_run` and the teammate's `cpu_step`, with a 10,000-instruction
 limit and nonzero exit status on faults. The formatter accepts multiple ranges
-for later segment views; recursion/heap visualization is not implemented here.
+for segment views; `--trace-segments` displays all four complete segments.
 
 Tests execute actual assembled code, compare full final CPU/RAM state against
 `cpu_run`, check read-only formatting, HALT/snapshot counts, full RAM block
@@ -165,4 +165,44 @@ Generated artifacts are ignored; all report source is versioned. Python can
 generate evidence independently with `python3 tools/report.py` after `make test`.
 
 ## Part 2: Program Layout & Execution
-_To be added._
+
+A separate recursive example preserves the iterative Part 1 program:
+
+```sh
+make
+./build/factorial_recursive                  # native recursive C: prints 24
+./build/simple16 programs/factorial_recursive.asm
+make recursive-trace                       # build/traces/factorial_recursive.txt
+./build/simple16 --trace-segments programs/factorial_recursive.asm
+```
+
+`programs/factorial_recursive.c` calls `factorial` from `main`. Its assembly
+translation uses the same structure: `CALL factorial` passes n in R1, and R0
+returns the answer. The default input is 4 to keep the call sequence short;
+the native reference accepts 0..8. The base case is `n == 0`.
+
+| Recursive C operation | Assembly operation |
+|---|---|
+| main calls factorial(input) | LOAD R1, [input]; CALL factorial |
+| if (n == 0) return 1 | LDI R2, 0; CMP R1, R2; JZ base; base: LDI R0, 1; RET |
+| Preserve n while evaluating factorial(n - 1) | PUSH R1; ADDI R1, -1; CALL factorial |
+| Multiply by this call's n and return | POP R2; MUL R0, R2; RET |
+| main saves the returned value | STORE R0, [result]; HALT |
+
+Each CALL pushes a return address. Each non-base call also pushes its n before
+calling again; POP restores n and RET restores the return address. For input 4,
+the deepest SP is 0xF7 (nine live stack words). SP returns to 0x100 at HALT.
+Popped words remain in RAM as inactive contents; SP identifies the live stack.
+R1 is a caller-clobbered argument register, R2 is scratch, and R0 is the return
+register. No heap allocation is used.
+
+`--trace-segments` prints the loaded state and every completed instruction,
+including each CALL, RET and HALT. Every snapshot shows all 256 words in named
+text, data, heap and stack blocks. This includes loading, entry to every recursive
+call, and completion; the unused heap remains visible. The existing `--trace`
+mode retains its compact instruction/data block for Part 1. Both modes run the
+same CPU engine. `make test` checks native C agreement, saved return addresses,
+saved n values, call/return counts, full segment coverage and stack restoration.
+
+The CPU Design PDF remains focused on Part 1. The recursive example and its
+four-segment trace provide execution evidence for a separate Part 2 report.
