@@ -3,74 +3,6 @@
 A 16-bit CPU of our own design, with an assembler, loader, and simulator written in C.
 CMPE 220 team project: **CPU Design** (Part 1) and **Program Layout & Execution** (Part 2).
 
-## Build and run (Member 3)
-
-Prerequisites: a C11 compiler (`cc`) and Make. Tests and report generation use
-Python 3's standard library. No UI, C compiler implementation, or external C
-libraries are needed.
-
-```sh
-make
-./build/simple16 programs/square.asm
-./build/factorial                 # native C reference: prints 40320
-./build/simple16 programs/factorial.asm
-make run-example
-make test
-make traces                      # build/traces/{square,factorial}.txt
-./build/simple16 --trace programs/square.asm
-./build/simple16 --listing programs/factorial.asm
-make sanitize                    # UBSan checks; compiler sanitizer support required
-make clean
-```
-
-`make` compiles the native reference as well as the simulator. To compile the
-reference independently: `cc -std=c11 programs/factorial.c -o /tmp/simple16-factorial`
-then `/tmp/simple16-factorial`. Its optional input argument is 0..8.
-The CPU runs the manually translated assembly; it does not execute native C.
-Both examples place input at 0x40 and result at 0x41. Expected results:
-square(8) = 64 in 4 instructions; factorial(8) = 40320 in 47 instructions.
-Factorial uses R0 for the accumulator, R1 for the countdown and R2 for zero.
-Its C function is inlined into the assembly entry program; no compiler is involved.
-
-Normal execution prints a short result summary. Explicit `--trace` mode prints
-the loaded state and state after every successful instruction, including HALT.
-Each snapshot repeats **all words 0x0000..0x0041**, including the gap between code
-and data. The executed address is captured before stepping and is distinct from
-the resulting PC. Word addresses and values are fixed-width hex; register values
-also show unsigned decimal. N tests bit 15: 40320 is a valid unsigned result even
-when N is set. MAR/MDR describe the last memory access, often instruction fetch.
-Both modes share `trace_run` and the teammate's `cpu_step`, with a 10,000-instruction
-limit and nonzero exit status on faults. The formatter accepts multiple ranges
-for later segment views; recursion/heap visualization is not implemented here.
-
-Tests execute actual assembled code, compare full final CPU/RAM state against
-`cpu_run`, check read-only formatting, HALT/snapshot counts, full RAM block
-coverage, error propagation and step limits, and compare factorial inputs
-0, 1, 5 and 8 against native C. Merged CPU/assembler fixes have regression checks; resolved issues and remaining
-limitations are recorded in
-[report/KNOWN_ISSUES.md](report/KNOWN_ISSUES.md).
-
-AddressSanitizer can be requested with `make SANITIZERS=address,undefined sanitize`.
-On this machine the combined ASan/UBSan test process stalled both inside and
-outside the sandbox and was stopped; no ASan pass is claimed.
-
-### Reproduce the report draft
-
-Install Tectonic for PDF generation, then run:
-
-```sh
-make report
-```
-
-This runs tests and generates traces, assembler listings, result tables, and
-`build/report/report.pdf` from [report/report.tex](report/report.tex) using
-[tools/report.py](tools/report.py). LaTeX packages may need an initial download.
-Generated artifacts are ignored; all report source is versioned. Python can
-generate evidence independently with `python3 tools/report.py` after `make test`.
-The title page intentionally requires actual team names. Confirm contributions
-and review the outstanding integration issues before submission. This is a
-**draft**, not a submission-ready combined report.
-
 ## Part 1: CPU Design
 
 ### Architecture Overview
@@ -170,6 +102,67 @@ loop:   MUL   R2, R0
         .data
 base:   .word 8
 ```
+
+## Build and run
+
+Prerequisites: a C11 compiler (`cc`) and Make. Tests and report generation use
+Python 3's standard library. No UI, C compiler implementation, or external C
+libraries are needed.
+
+```sh
+make
+./build/simple16 programs/square.asm
+./build/factorial                 # native C reference: prints 40320
+./build/simple16 programs/factorial.asm
+make run-example
+make test
+make traces                      # build/traces/{square,factorial}.txt
+./build/simple16 --trace programs/square.asm
+./build/simple16 --listing programs/factorial.asm
+make sanitize                    # UBSan checks; compiler sanitizer support required
+make clean
+```
+
+`make` compiles the native reference as well as the simulator. To compile the
+reference independently: `cc -std=c11 programs/factorial.c -o /tmp/simple16-factorial`
+then `/tmp/simple16-factorial`. Its optional input argument is 0..8.
+The CPU runs the manually translated assembly; it does not execute native C.
+Both examples place input at 0x40 and result at 0x41. Expected results:
+square(8) = 64 in 4 instructions; factorial(8) = 40320 in 47 instructions.
+Factorial uses R0 for the accumulator, R1 for the countdown and R2 for zero.
+Its C function is inlined into the assembly entry program; no compiler is involved.
+
+Normal execution prints a short result summary. Explicit `--trace` mode prints
+the loaded state and state after every successful instruction, including HALT.
+Each snapshot repeats **all words 0x0000..0x0041**, including the gap between code
+and data. The executed address is captured before stepping and is distinct from
+the resulting PC. Word addresses and values are fixed-width hex; register values
+also show unsigned decimal. N tests bit 15: 40320 is a valid unsigned result even
+when N is set. MAR/MDR describe the last memory access, often instruction fetch.
+Both modes share `trace_run` and the teammate's `cpu_step`, with a 10,000-instruction
+limit and nonzero exit status on faults. The formatter accepts multiple ranges
+for later segment views; recursion/heap visualization is not implemented here.
+
+Tests execute actual assembled code, compare full final CPU/RAM state against
+`cpu_run`, check read-only formatting, HALT/snapshot counts, full RAM block
+coverage, error propagation and step limits, and compare factorial inputs
+0, 1, 5 and 8 against native C. Merged CPU/assembler fixes have regression checks; resolved issues and remaining
+limitations are recorded in
+[report/KNOWN_ISSUES.md](report/KNOWN_ISSUES.md).
+
+### Generate the report
+
+Install Tectonic for PDF generation, then run:
+
+```sh
+make report
+```
+
+This runs tests and generates traces, assembler listings, result tables, and
+`build/report/report.pdf` from [report/report.tex](report/report.tex) using
+[tools/report.py](tools/report.py). LaTeX packages may need an initial download.
+Generated artifacts are ignored; all report source is versioned. Python can
+generate evidence independently with `python3 tools/report.py` after `make test`.
 
 ## Part 2: Program Layout & Execution
 _To be added._
