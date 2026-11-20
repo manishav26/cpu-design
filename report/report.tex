@@ -65,9 +65,9 @@ return acc & STORE R0, [result]; HALT\\\bottomrule
 \input{results.tex}
 Unsigned 8! is 40320 (0x9D80). Its high bit is set, so N=1 is valid.
 The loop tests the counter against zero; it does not use N to compare magnitudes.
+\clearpage
 \subsection*{Validation output}
 \VerbatimInput[fontsize=\small]{tests.txt}
-\clearpage
 \section*{Complete execution evidence}
 Every snapshot contains the same contiguous RAM block, 0x0000--0x0041,
 including unused text words. Addresses and values are hexadecimal words.
@@ -104,5 +104,5 @@ Member & Contribution allocation (names pending)\\\midrule
 \item UBSan passes the contributed tests. Combined ASan/UBSan stalled on this host and was stopped; no ASan pass is claimed. Example tests cover the submitted arithmetic programs; they do not certify the CPU across all operand values. See report/KNOWN\_ISSUES.md for resolved issues and remaining limitations.
 \item Add actual team names and confirm allocations. Team review and integration are still required; this draft is not submission-ready.
 \end{itemize}
-The trace API accepts multiple inclusive memory ranges so later text/data/heap/stack views can reuse the formatter. Recursive execution for the December assignment is outside this contribution.
+The trace API accepts multiple inclusive memory ranges. Separate recursive examples and a four-segment CLI mode support the December assignment; this CPU Design report retains the Part 1 iterative translation and traces.
 \end{document}

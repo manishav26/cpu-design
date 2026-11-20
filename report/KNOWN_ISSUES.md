@@ -22,4 +22,5 @@ Member 3 documentation integration: 16 primary groups contain 18 mnemonics.
 Combined AddressSanitizer/UBSan stalled on this host in the earlier attempt;
 no ASan pass is claimed. UBSan remains the default sanitizer check.
 Actual team names, contribution confirmation and final review are still needed.
-The December recursive program assignment is outside this contribution.
+The recursive example and four-segment trace mode support the December assignment;
+a separate Part 2 report is still required.
