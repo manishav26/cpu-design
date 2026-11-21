@@ -1,0 +1,108 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{graphicx,fancyhdr,lastpage,longtable,booktabs,fancyvrb,hyperref}
+\hypersetup{hidelinks}
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\ifnum\value{page}<10 0\fi\thepage/\pageref{LastPage}}
+\setlength{\headheight}{14pt}
+\begin{document}
+\begin{titlepage}
+\thispagestyle{fancy}
+\centering\vspace*{1in}
+{\Huge SIMPLE-16 CPU Design\par}\vspace{1cm}
+{\Large CMPE 220 --- November 28, 2026\par}\vspace{1cm}
+{\Large DRAFT --- team names required\par}
+\vspace{1cm}
+Member 1: [name required]\\Member 2: [name required]\\Member 3: [name required]
+\vfill
+Repository: \url{https://github.com/manishav26/cpu-design}\\
+Branch: \texttt{feat/programs-execution-tracing}\\
+Draft includes measured execution evidence; outstanding integration issues appear at the end.
+\end{titlepage}
+\setcounter{page}{2}
+\section*{Architecture and instruction encoding}
+\begin{figure}[h]\centering
+\includegraphics[width=.94\linewidth,height=.46\textheight,keepaspectratio]{../../docs/cpu_diagram.png}
+\caption{Team CPU architecture diagram (Member 1).}
+\end{figure}
+\begin{table}[h]\centering
+\begin{tabular}{ll}\toprule
+Property & SIMPLE-16 \\\midrule
+Word / instruction & 16 bits / fixed 16 bits\\
+Registers & R0--R3, unsigned 16-bit values\\
+Text / data & 0x00--0x3F / 0x40--0x7F\\
+Heap / stack & 0x80--0xBF / 0xC0--0xFF\\
+Stack & Downward; empty SP=0x100; first push at 0xFF\\
+Flags & Z: zero; N: bit 15; arithmetic and CMP update both\\
+Opcode groups / mnemonics & 16 / 18 (PUSH, POP, RET share F)\\\bottomrule
+\end{tabular}\caption{Source-verified architecture summary.}
+\end{table}
+\clearpage
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth,height=.82\textheight,keepaspectratio]{../../docs/encoding_table.png}
+\caption{Team instruction encoding table (Member 1).}
+\end{figure}
+\clearpage
+\section*{Program listings and manual translation}
+R0 holds each result; RAM[0x40] is input and RAM[0x41] is result.
+The laptop executes the C reference; SIMPLE-16 executes only assembly.
+\subsection*{Native C reference}
+\VerbatimInput[fontsize=\small]{../../programs/factorial.c}
+\begin{table}[h]\centering
+\begin{tabular}{ll}\toprule
+C operation & Manual assembly translation\\\midrule
+Function argument n & LOAD R1, [input]\\
+acc = 1 & LDI R0, 1\\
+while (n != 0) & LDI R2, 0; CMP R1, R2; JZ done\\
+acc = acc * n & MUL R0, R1\\
+n-- & ADDI R1, -1\\
+Repeat condition & JMP loop\\
+return acc & STORE R0, [result]; HALT\\\bottomrule
+\end{tabular}\caption{C-to-assembly mapping; standalone translation inlines the function into the entry program.}
+\end{table}
+\clearpage
+\input{listings.tex}
+\section*{Measured results}
+\input{results.tex}
+Unsigned 8! is 40320 (0x9D80). Its high bit is set, so N=1 is valid.
+The loop tests the counter against zero; it does not use N to compare magnitudes.
+\clearpage
+\subsection*{Validation output}
+\VerbatimInput[fontsize=\small]{tests.txt}
+\section*{Complete execution evidence}
+Every snapshot contains the same contiguous RAM block, 0x0000--0x0041,
+including unused text words. Addresses and values are hexadecimal words.
+The executed address was captured before stepping; PC is the resulting PC.
+IR contains the fetched instruction. MAR/MDR show the last memory access,
+which can be the instruction fetch. No instruction has executed in the initial snapshot.
+\input{snapshots.tex}
+\clearpage
+\section*{Build, run, and contribution}
+Prerequisites: C11 compiler, Make; Python 3 for test/report generation.
+PDF generation additionally uses Tectonic (LaTeX packages may require an initial download).
+\begin{Verbatim}[fontsize=\small]
+make
+make run-example
+./build/factorial
+./build/simple16 programs/factorial.asm
+make traces
+make test
+make sanitize
+make report
+\end{Verbatim}
+\begin{table}[h]\centering
+\begin{tabular}{lp{.72\linewidth}}\toprule
+Member & Contribution allocation (names pending)\\\midrule
+1 & CPU architecture, ISA, assembler, instruction encoding and architecture figures.\\
+2 & CPU execution, registers, ALU, flags, branches, stack, loader and original CLI.\\
+3 & Assembly examples, native factorial reference and manual translation; read-only trace formatting and CLI integration; correctness tests; Makefile; run instructions; generated listings, results, snapshots and report integration.\\\bottomrule
+\end{tabular}\caption{Specific team contribution allocation, pending confirmation of names and final review.}
+\end{table}
+\subsection*{Integration status and final review}
+\begin{itemize}
+\item Integrated main includes Member 2 fixes: widened MUL operands and effective addresses checked before narrowing. Regression tests verify multiplication wrap and invalid LOAD/STORE rejection.
+\item Member 1 fixes reject JMP/CALL targets outside text and .word literals outside -32768..65535. Missing final source newlines remain a compiler warning.
+\item UBSan passes the contributed tests. Combined ASan/UBSan stalled on this host and was stopped; no ASan pass is claimed. Example tests cover the submitted arithmetic programs; they do not certify the CPU across all operand values. See report/KNOWN\_ISSUES.md for resolved issues and remaining limitations.
+\item Add actual team names and confirm allocations. Team review and integration are still required; this draft is not submission-ready.
+\end{itemize}
+The trace API accepts multiple inclusive memory ranges. Separate recursive examples and a four-segment CLI mode support the December assignment; this CPU Design report retains the Part 1 iterative translation and traces.
+\end{document}

@@ -3,3 +3,5 @@ cpu.exe
 *.hex
 *.o
 .DS_Store
+
+/build/
