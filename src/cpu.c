@@ -1,9 +1,11 @@
-
 /*
  * cpu.c -- SIMPLE-16 CPU execution engine
  *
- * Implements fetch, decode, execute and status updates.
- * Instruction encoding follows Person A's isa.h / isa.c.
+ * Each instruction takes three clock ticks:
+ *   FETCH    MAR <- PC, bus read, MDR <- RAM[MAR], IR <- MDR, PC <- PC + 1
+ *   DECODE   split IR into opcode / register / address fields
+ *   EXECUTE  ALU, bus read/write, or PC update, depending on the opcode
+ * Instruction encoding follows isa.h / isa.c.
  */
 
 #include <stdio.h>
@@ -17,21 +19,47 @@ static void update_flags(CPU *cpu, uint16_t result)
     cpu->n = ((result & 0x8000u) != 0);
 }
 
-/* Read a memory word and update MAR / MDR. */
+/* ALU: compute a (op) b, keep the inputs for the trace, set Z and N. */
+static uint16_t alu(CPU *cpu, char op, uint16_t a, uint16_t b)
+{
+    uint16_t out;
+    if (op == '+')
+        out = (uint16_t)(a + b);
+    else if (op == '-')
+        out = (uint16_t)(a - b);
+    else                                        /* '*': keep low 16 bits */
+        out = (uint16_t)((uint32_t)a * (uint32_t)b);
+    cpu->alu = (Alu){ true, op, a, b, out };
+    update_flags(cpu, out);
+    return out;
+}
+
+/* Bus read: MAR drives the address lines, RAM puts the word on the data lines. */
 static uint16_t read_memory(CPU *cpu, uint16_t address)
 {
     cpu->mar = address;
     cpu->mdr = cpu->ram[address];
+    cpu->bus = (Bus){ cpu->mar, cpu->mdr, 'R' };
     return cpu->mdr;
 }
 
-/* Write a memory word and update MAR / MDR. */
+/* Bus write: MAR drives the address lines, MDR drives the data lines. */
 static void write_memory(CPU *cpu, uint16_t address,
                          uint16_t value)
 {
     cpu->mar = address;
     cpu->mdr = value;
+    cpu->bus = (Bus){ cpu->mar, cpu->mdr, 'W' };
     cpu->ram[address] = value;
+}
+
+/* End of a clock phase: count the tick and let the tracer look. */
+static void tick(CPU *cpu, Phase phase)
+{
+    cpu->clock++;
+    if (cpu->on_tick != NULL)
+        cpu->on_tick(cpu, phase, cpu->tick_ctx);
+    cpu->bus.control = '-';                     /* bus idle until next transfer */
 }
 
 /* Mark execution as failed. */
@@ -47,34 +75,36 @@ void cpu_reset(CPU *cpu)
 {
     memset(cpu, 0, sizeof(*cpu));
     cpu->sp = SP_START;
+    cpu->bus.control = '-';
 }
 
-/* Execute exactly one machine instruction. */
-int cpu_step(CPU *cpu)
+/* FETCH: read the instruction at PC over the bus into IR, then PC + 1. */
+static int fetch(CPU *cpu)
 {
-    if (cpu->faulted)
-        return -1;
-
-    if (cpu->halted)
-        return 0;
-
-    /* FETCH */
     if (cpu->pc > TEXT_END)
         return cpu_error(cpu, "PC outside text segment");
 
+    cpu->alu.used = false;
     cpu->ir = read_memory(cpu, cpu->pc);
     cpu->pc++;
+    return 0;
+}
 
-    /* DECODE */
-    Fields f = decode(cpu->ir);
-
-    if (op_by_code(f.op, f.rs) == NULL)
+/* DECODE: split IR into fields and check the opcode is legal. */
+static int decode_ir(CPU *cpu)
+{
+    cpu->dec = decode(cpu->ir);
+    if (op_by_code(cpu->dec.op, cpu->dec.rs) == NULL)
         return cpu_error(cpu, "Illegal opcode");
+    return 0;
+}
 
-    uint16_t result;
+/* EXECUTE: carry out the decoded instruction. */
+static int execute(CPU *cpu)
+{
+    Fields f = cpu->dec;
     uint32_t address;
 
-    /* EXECUTE */
     switch (f.op) {
 
     case OP_HALT:
@@ -105,40 +135,31 @@ int cpu_step(CPU *cpu)
             return cpu_error(cpu, "STORE address out of range");
 
         write_memory(cpu, (uint16_t)address, cpu->regs[f.rd]);
-        break;  
+        break;
 
     case OP_MOV:
         cpu->regs[f.rd] = cpu->regs[f.rs];
         break;
 
-    case OP_ADD:
-        result = (uint16_t)(cpu->regs[f.rd] + cpu->regs[f.rs]);
-        cpu->regs[f.rd] = result;
-        update_flags(cpu, result);
+    case OP_ADD:                                /* ALU: Rd + Rs */
+        cpu->regs[f.rd] = alu(cpu, '+', cpu->regs[f.rd], cpu->regs[f.rs]);
         break;
 
-    case OP_SUB:
-        result = (uint16_t)(cpu->regs[f.rd] - cpu->regs[f.rs]);
-        cpu->regs[f.rd] = result;
-        update_flags(cpu, result);
+    case OP_SUB:                                /* ALU: Rd - Rs */
+        cpu->regs[f.rd] = alu(cpu, '-', cpu->regs[f.rd], cpu->regs[f.rs]);
         break;
 
-    case OP_MUL:
-        result = (uint16_t)((uint32_t)cpu->regs[f.rd] *
-                            (uint32_t)cpu->regs[f.rs]);
-        cpu->regs[f.rd] = result;
-        update_flags(cpu, result);
+    case OP_MUL:                                /* ALU: Rd * Rs, low 16 bits */
+        cpu->regs[f.rd] = alu(cpu, '*', cpu->regs[f.rd], cpu->regs[f.rs]);
         break;
 
-    case OP_ADDI:
-        result = (uint16_t)(cpu->regs[f.rd] + sign8(f.imm8));
-        cpu->regs[f.rd] = result;
-        update_flags(cpu, result);
+    case OP_ADDI:                               /* ALU: Rd + signed imm8 */
+        cpu->regs[f.rd] = alu(cpu, '+', cpu->regs[f.rd],
+                              (uint16_t)sign8(f.imm8));
         break;
 
-    case OP_CMP:
-        result = (uint16_t)(cpu->regs[f.rd] - cpu->regs[f.rs]);
-        update_flags(cpu, result);
+    case OP_CMP:                                /* ALU: Rd - Rs, flags only */
+        alu(cpu, '-', cpu->regs[f.rd], cpu->regs[f.rs]);
         break;
 
     case OP_JMP:
@@ -204,8 +225,29 @@ int cpu_step(CPU *cpu)
     default:
         return cpu_error(cpu, "Unknown opcode");
     }
+    return 0;
+}
 
+/* Execute exactly one machine instruction: three clock ticks. */
+int cpu_step(CPU *cpu)
+{
+    if (cpu->faulted)
+        return -1;
+    if (cpu->halted)
+        return 0;
+
+    if (fetch(cpu) < 0)
+        return -1;
+    tick(cpu, PHASE_FETCH);
+
+    if (decode_ir(cpu) < 0)
+        return -1;
+    tick(cpu, PHASE_DECODE);
+
+    if (execute(cpu) < 0)
+        return -1;
     cpu->steps++;
+    tick(cpu, PHASE_EXECUTE);
     return 1;
 }
 
