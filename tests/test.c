@@ -18,7 +18,7 @@ static void example(const char *path, unsigned input, unsigned expected)
     static Program p;
     CPU normal, traced, before;
     char err[256], line[1024];
-    unsigned snapshots=0, initial=0, halt=0;
+    unsigned snapshots=0, initial=0, halt=0, fetches=0, decodes=0, executes=0;
     assert(assemble_file(path,&p,err,sizeof err)==0);
     int input_addr=-1, result_addr=-1;
     for(int i=0;i<p.count;++i) {
@@ -50,8 +50,13 @@ static void example(const char *path, unsigned input, unsigned expected)
         if(!strncmp(line,"SNAPSHOT",8)) ++snapshots;
         if(strstr(line,"INITIAL")) ++initial;
         if(strstr(line,"word=0x0000 HALT")) ++halt;
+        if(strstr(line," FETCH ")) ++fetches;
+        if(strstr(line," DECODE ")) ++decodes;
+        if(strstr(line," EXECUTE ")) ++executes;
     }
     assert(snapshots==normal.steps+1 && initial==1 && halt==1);
+    assert(normal.clock==3*normal.steps);       /* FETCH, DECODE, EXECUTE */
+    assert(fetches==normal.steps && decodes==normal.steps && executes==normal.steps);
     fclose(out);
     printf("PASS %s input=%u result=%u steps=%lu snapshots=%u\n",path,input,expected,normal.steps,snapshots);
 }

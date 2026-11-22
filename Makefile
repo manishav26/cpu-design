@@ -1,39 +1,49 @@
+# SIMPLE-16 build.  make = simulator + native C references,  make test = all checks
 CC = cc
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 SANITIZERS ?= undefined
 CORE = src/isa.c src/assembler.c src/cpu.c src/loader.c src/trace.c
+NATIVE = build/factorial build/factorial_recursive build/add build/mul
+PROGRAMS = add mul square factorial
 
-.PHONY: all run-example test clean traces report sanitize recursive-trace
-all: build/simple16 build/factorial build/factorial_recursive
+.PHONY: all run-example test clean traces sanitize recursive-trace
+all: build/simple16 $(NATIVE)
 build:
 	mkdir -p build
+
+# Simulator
 build/simple16: $(CORE) src/main.c $(wildcard src/*.h) | build
 	$(CC) $(CFLAGS) -Isrc $(CORE) src/main.c -o $@
-build/factorial: programs/factorial.c | build
+
+# Native C versions of the example programs (for comparing results)
+build/%: programs/%.c | build
 	$(CC) $(CFLAGS) $< -o $@
-build/factorial_recursive: programs/factorial_recursive.c | build
-	$(CC) $(CFLAGS) $< -o $@
+
 build/test: tests/test.c $(CORE) $(wildcard src/*.h) | build
 	$(CC) $(CFLAGS) -Isrc $(CORE) tests/test.c -o $@
+
 run-example: all
-	./build/simple16 programs/square.asm
-	./build/simple16 programs/factorial.asm
+	@for p in $(PROGRAMS); do echo "== $$p"; ./build/simple16 programs/$$p.asm; done
+
 test: all build/test
 	./build/test
 	python3 tests/cli.py
 	python3 tests/recursive.py
+
+# Full instruction-by-instruction traces into build/traces/
 traces: all
 	mkdir -p build/traces
-	./build/simple16 --trace programs/square.asm > build/traces/square.txt
-	./build/simple16 --trace programs/factorial.asm > build/traces/factorial.txt
+	@for p in $(PROGRAMS); do ./build/simple16 --trace programs/$$p.asm > build/traces/$$p.txt; done
+	./build/simple16 --isa > build/traces/isa.txt
+
+# Part 2: recursive factorial with all four memory segments
 recursive-trace: all
 	mkdir -p build/traces
 	./build/simple16 --trace-segments programs/factorial_recursive.asm > build/traces/factorial_recursive.txt
-report: test traces
-	python3 tools/report.py
-	tectonic --outdir build/report build/report/report.tex
+
 sanitize:
 	$(MAKE) clean
 	$(MAKE) CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=$(SANITIZERS) -fno-sanitize-recover=all' test
+
 clean:
 	rm -rf build
