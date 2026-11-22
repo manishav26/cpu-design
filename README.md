@@ -103,66 +103,65 @@ loop:   MUL   R2, R0
 base:   .word 8
 ```
 
-## Build and run
+### Simulator Code Structure
 
-Prerequisites: a C11 compiler (`cc`) and Make. Tests and report generation use
-Python 3's standard library. No UI, C compiler implementation, or external C
-libraries are needed.
+| Part of the CPU | Code |
+|---|---|
+| Registers (GPR, SPR), flags, RAM | `CPU` struct in `src/cpu.h` |
+| Bus (address, data, R/W control) | `Bus` struct, `read_memory()` / `write_memory()` in `src/cpu.c` |
+| ALU | `Alu` struct, `alu()` in `src/cpu.c` |
+| Clock and instruction cycle | `fetch()`, `decode_ir()`, `execute()`, `tick()` in `src/cpu.c` |
+| Loader (program into RAM) | `cpu_load_program()` in `src/loader.c` |
+| Display of CPU and RAM | `src/trace.c` |
 
-```sh
-make
-./build/simple16 programs/square.asm
-./build/factorial                 # native C reference: prints 40320
-./build/simple16 programs/factorial.asm
-make run-example
-make test
-make traces                      # build/traces/{square,factorial}.txt
-./build/simple16 --trace programs/square.asm
-./build/simple16 --listing programs/factorial.asm
-make sanitize                    # UBSan checks; compiler sanitizer support required
-make clean
-```
+### Example Programs
 
-`make` compiles the native reference as well as the simulator. To compile the
-reference independently: `cc -std=c11 programs/factorial.c -o /tmp/simple16-factorial`
-then `/tmp/simple16-factorial`. Its optional input argument is 0..8.
-The CPU runs the manually translated assembly; it does not execute native C.
-Both examples place input at 0x40 and result at 0x41. Expected results:
-square(8) = 64 in 4 instructions; factorial(8) = 40320 in 47 instructions.
-Factorial uses R0 for the accumulator, R1 for the countdown and R2 for zero.
-Its C function is inlined into the assembly entry program; no compiler is involved.
+| Program | Written in | Computes | Result |
+|---|---|---|---|
+| `programs/add.asm` | C (`add.c`), translated by hand | 25 + 17 | 42 |
+| `programs/mul.asm` | C (`mul.c`), translated by hand | 6 × 7 | 42 |
+| `programs/factorial.asm` | C (`factorial.c`), translated by hand | 8! | 40320 |
+| `programs/square.asm` | SIMPLE-16 assembly directly | 8² | 64 |
 
-Normal execution prints a short result summary. Explicit `--trace` mode prints
-the loaded state and state after every successful instruction, including HALT.
-Each snapshot repeats **all words 0x0000..0x0041**, including the gap between code
-and data. The executed address is captured before stepping and is distinct from
-the resulting PC. Word addresses and values are fixed-width hex; register values
-also show unsigned decimal. N tests bit 15: 40320 is a valid unsigned result even
-when N is set. MAR/MDR describe the last memory access, often instruction fetch.
-Both modes share `trace_run` and the teammate's `cpu_step`, with a 10,000-instruction
-limit and nonzero exit status on faults. The formatter accepts multiple ranges
-for segment views; `--trace-segments` displays all four complete segments.
+### Build and Run
 
-Tests execute actual assembled code, compare full final CPU/RAM state against
-`cpu_run`, check read-only formatting, HALT/snapshot counts, full RAM block
-coverage, error propagation and step limits, and compare factorial inputs
-0, 1, 5 and 8 against native C. Merged CPU/assembler fixes have regression checks; resolved issues and remaining
-limitations are recorded in
-[report/KNOWN_ISSUES.md](report/KNOWN_ISSUES.md).
-
-### Generate the report
-
-Install Tectonic for PDF generation, then run:
+Needs a C compiler, `make` and Python 3 (for tests).
 
 ```sh
-make report
+make                                          # build simulator + native C versions
+./build/simple16 programs/add.asm             # run, print result
+./build/simple16 --trace programs/add.asm     # RAM after loading, then every clock tick
+./build/simple16 --listing programs/add.asm   # assembled binary of each line
+./build/simple16 --isa                        # instruction set table with binary codes
+./build/factorial                             # native C version of a program (also add, mul)
+make test                                     # all tests
+make traces                                   # traces of all programs in build/traces/
+make sanitize                                 # tests again with undefined-behavior checks
 ```
 
-This runs tests and generates traces, assembler listings, result tables, and
-`build/report/report.pdf` from [report/report.tex](report/report.tex) using
-[tools/report.py](tools/report.py). LaTeX packages may need an initial download.
-Generated artifacts are ignored; all report source is versioned. Python can
-generate evidence independently with `python3 tools/report.py` after `make test`.
+### Trace Output (one instruction)
+
+```
+SNAPSHOT step=2 executed=0x0001 word=0x7000 MUL R0, R0   [0111 00 00 00000000]
+  CLK 4    FETCH    bus READ  addr=0x01 data=0x7000 | MAR=0x01 MDR=0x7000 -> IR=0111 0000 0000 0000, PC=0x02
+  CLK 5    DECODE   0111 00 00 00000000 -> MUL R0, R0
+  CLK 6    EXECUTE  ALU 0x0008 * 0x0008 = 0x0040 | bus idle | PC=0x02
+  GPR  R0=0x0040(64) R1=0x0000(0) R2=0x0000(0) R3=0x0000(0)
+  SPR  PC=0x0002 IR=0x7000 SP=0x0100 MAR=0x0001 MDR=0x7000
+  ALU  0x0008 * 0x0008 = 0x0040   FLAGS Z=0 N=0
+  RAM  addr  binary               hex   ASCII
+       0x00  0010 0000 0100 0000  2040  | @|
+       0x01  0111 0000 0000 0000  7000  |p.|
+       ...
+```
+
+| Line | Shows |
+|---|---|
+| `CLK n FETCH` | Bus read of the instruction at PC into IR, PC + 1 |
+| `CLK n DECODE` | IR split into its binary fields and the instruction |
+| `CLK n EXECUTE` | ALU operation and/or bus read/write, and the PC after it (shows jumps) |
+| `GPR` / `SPR` / `ALU` | Registers, ALU and flags after the instruction |
+| `RAM` | Code and data words in binary, hex and ASCII (`.` = not printable) |
 
 ## Part 2: Program Layout & Execution
 
