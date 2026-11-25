@@ -19,16 +19,19 @@ build/simple16: $(CORE) src/main.c $(wildcard src/*.h) | build
 build/%: programs/%.c | build
 	$(CC) $(CFLAGS) $< -o $@
 
+build/cli build/recursive: build/%: tests/%.c tests/run.h | build
+	$(CC) $(CFLAGS) $< -o $@
+
 build/test: tests/test.c $(CORE) $(wildcard src/*.h) | build
 	$(CC) $(CFLAGS) -Isrc $(CORE) tests/test.c -o $@
 
 run-example: all
 	@for p in $(PROGRAMS); do echo "== $$p"; ./build/simple16 programs/$$p.asm; done
 
-test: all build/test
+test: all build/test build/cli build/recursive
 	./build/test
-	python3 tests/cli.py
-	python3 tests/recursive.py
+	./build/cli
+	./build/recursive
 
 # Full instruction-by-instruction traces into build/traces/
 traces: all
